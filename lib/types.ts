@@ -1,0 +1,10 @@
+export type Meal = 'Almoço' | 'Jantar';
+export type Menu = { id: string; restaurant: string; name: string; description: string; price: number; date: string; meal: Meal; deadline: string; pickup: string; capacity: number; reserved: number; tags: string[]; image: string; active: boolean; ready: boolean };
+export type CartItem = { menuId: string; quantity: number };
+export type OrderItem = { menuId: string; name: string; restaurant: string; date: string; meal: Meal; price: number; quantity: number; pickup: string; collectedAt?: string; collectedBy?: string };
+export type Order = { id: string; uid: string; customer: string; email: string; createdAt: string; expiresAt: string; status: 'pending' | 'paid' | 'expired' | 'cancelled' | 'refunded'; total: number; items: OrderItem[]; token: string; paymentId?: string; pix?: string; pixImage?: string; paidAt?: string; note: string };
+export type Notice = { id: string; uid?: string; title: string; body: string; createdAt: string };
+export type Session = { uid: string; name: string; email: string; admin: boolean };
+export const money = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v / 100);
+export const days = [{ date: '2026-11-20', name: 'Sexta', day: '20' }, { date: '2026-11-21', name: 'Sábado', day: '21' }, { date: '2026-11-22', name: 'Domingo', day: '22' }];
+export const dateLabel = (d: string) => d.split('-').reverse().slice(0, 2).join('/');

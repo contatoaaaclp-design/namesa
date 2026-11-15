@@ -1,0 +1,8 @@
+rules_version = '2';
+service cloud.firestore {
+ match /databases/{database}/documents {
+  // O app acessa dados pela API que verifica o Firebase ID Token.
+  // O Admin SDK ignora estas regras. Clientes não acessam o Firestore diretamente.
+  match /{document=**} { allow read, write: if false; }
+ }
+}
