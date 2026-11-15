@@ -5,3 +5,11 @@ node_modules/
 *.tsbuildinfo
 .vercel/
 *admin-key*.json
+
+# Certificados e credenciais locais
+*.p12
+*.pfx
+*.pem
+*.key
+certs/
+certificates/

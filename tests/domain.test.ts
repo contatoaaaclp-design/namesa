@@ -1,9 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHmac } from 'node:crypto';
 import { priceCart, assertCollectable, checkoutSchema } from '../lib/domain';
 import { seedMenus } from '../lib/seed';
-import { verifyWebhook } from '../lib/payments';
 const now = Date.parse('2026-11-14T12:00:00-03:00');
 test('preço vem do cardápio; compra combina datas e refeições', () => {
  const result = priceCart(seedMenus, [{ menuId: 'menu-0-0-0', quantity: 2 }, { menuId: 'menu-1-1-2', quantity: 1 }], now);
@@ -25,11 +23,4 @@ test('retirada exige pagamento, chegada, item válido e uso único', () => {
 });
 test('valida entrada do checkout', () => {
  assert.equal(checkoutSchema.safeParse({ requestId: 'x', cpf: '123', items: [] }).success, false);
-});
-test('webhook exige HMAC íntegro e timestamp recente', () => {
- const ts = String(Date.now()); const secret = 'test-secret';
- const hash = createHmac('sha256', secret).update(`id:123;request-id:request;ts:${ts};`).digest('hex');
- assert.equal(verifyWebhook('123', 'request', `ts=${ts},v1=${hash}`, secret), true);
- assert.equal(verifyWebhook('124', 'request', `ts=${ts},v1=${hash}`, secret), false);
- assert.equal(verifyWebhook('123', 'request', `ts=100,v1=${hash}`, secret), false);
 });

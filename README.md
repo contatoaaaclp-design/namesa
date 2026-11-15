@@ -1,6 +1,6 @@
 # Inter na Mesa
 
-Aplicativo PWA para organizar as refeições da delegação no Inter, de **20 a 22 de novembro de 2026**, em horário de Brasília. Usa Next.js, Firebase e Pix via Mercado Pago, com hospedagem preparada para a Vercel.
+Aplicativo PWA para organizar as refeições da delegação no Inter, de **20 a 22 de novembro de 2026**, em horário de Brasília. Usa Next.js, Firebase e Pix via Efí Bank, com hospedagem preparada para a Vercel.
 
 ## Por onde começar
 
@@ -10,7 +10,7 @@ Você pode configurar em três etapas. Não precisa conseguir todas as credencia
 | --- | --- | --- |
 | 1. Demonstração | Nenhuma variável | Cardápio fictício, pedidos simulados, QR e painel de teste |
 | 2. Firebase | As cinco variáveis públicas do app Web e as três variáveis do Admin SDK | Login Google, banco real, pedidos da conta e painel administrativo |
-| 3. Publicação e integrações | URL HTTPS, Mercado Pago, VAPID e cron | Pix real, notificações no celular e expiração automática |
+| 3. Publicação e integrações | URL HTTPS, Efí, VAPID e cron | Pix real, notificações no celular e expiração automática |
 
 **Importante:** preencher apenas a chave pública do Firebase não configura o banco no servidor. Termine as duas partes do Firebase antes de tentar usar o app fora da demonstração. Sem Firebase configurado, o app simula pagamentos; com Firebase configurado, não há botão para simular pagamento real.
 
@@ -74,8 +74,14 @@ O `.gitignore` já exclui `.env` e `.env.local`. Não envie esses arquivos, o JS
 | `FIREBASE_PRIVATE_KEY` | `private_key` do mesmo JSON | Autentica o servidor com acesso administrativo | Firebase; **secreta** |
 | `NEXT_PUBLIC_FIREBASE_VAPID_KEY` | Chave pública de Web Push no Firebase | Permite registrar o celular para push | Notificações |
 | `APP_URL` | Endereço pelo qual o aplicativo é acessado | Monta o webhook e os links das notificações | Local: `http://localhost:3000`; Pix: URL pública HTTPS |
-| `MERCADOPAGO_ACCESS_TOKEN` | Credenciais da aplicação Mercado Pago | Cria e consulta cobranças na conta recebedora | Pix; **secreta** |
-| `MERCADOPAGO_WEBHOOK_SECRET` | Configuração de Webhooks no Mercado Pago | Confere a assinatura das notificações de pagamento | Pix; **secreta** |
+| `EFI_SANDBOX` | Escolha do ambiente | `true` para homologação; `false` para produção | Pix |
+| `EFI_CLIENT_ID` | Conta Efí > API > Aplicações > credenciais | Identifica a aplicação no ambiente escolhido | Pix; privado |
+| `EFI_CLIENT_SECRET` | Mesmo local do Client ID | Autentica a aplicação | Pix; **secreta** |
+| `EFI_CERTIFICATE_BASE64` | Arquivo .p12 completo convertido para Base64 | Autenticação mTLS nas chamadas à API | Pix; **secreta** |
+| `EFI_CERTIFICATE_PASSWORD` | Senha do .p12, se existir | Abre o certificado; vazio quando não houver senha | Pix; **secreta** |
+| `EFI_PIX_KEY` | Chave cadastrada na conta Efí recebedora | Identifica o recebedor das cobranças | Pix |
+| `EFI_WEBHOOK_SECRET` | Você gera uma sequência aleatória | Protege a URL do webhook | Webhook; **secreta** |
+| `EFI_WEBHOOK_ALLOWED_IPS` | IPs de envio publicados pela Efí | Confere a origem na Vercel; padrão `34.193.116.226` | Webhook |
 | `CRON_SECRET` | Você gera uma sequência aleatória | Protege a rotina que trata pedidos vencidos | Agendamento; **secreta** |
 
 **Os dois `PROJECT_ID` precisam apontar para o mesmo projeto.** Nenhum deles é o nome de exibição do projeto, o número do projeto ou o `appId`.
@@ -213,55 +219,87 @@ Não use o JSON administrativo ou a chave de API nesse campo. Confira também `N
 
 Reinicie o app, entre com sua conta e abra **Avisos > Ativar notificações**. Permita a solicitação do navegador. Para testar um aviso de chegada, deve existir uma refeição paga daquela conta; o disparo é feito pelo painel da atlética. Não basta preencher a VAPID para o aviso chegar: o aparelho precisa registrar a permissão e o token.
 
-## 6. Publicar e configurar o Pix
+## 6. Configurar o Pix da Efí Bank
 
-### Entenda qual conta recebe
+A integração usa **a API Pix da conta Efí que receberá o dinheiro da atlética**. O código não usa mais Mercado Pago. As variáveis antigas `MERCADOPAGO_*` não são utilizadas; não coloque nelas os valores da Efí.
 
-Esta implementação usa a **conta Mercado Pago da atlética**. O pagamento entra no saldo dessa conta, conforme as condições do provedor. `MERCADOPAGO_ACCESS_TOKEN` não é a chave Pix, senha, Public Key, Client ID ou Client Secret.
+### Credenciais, ambiente e escopos
 
-Se vocês querem receber diretamente por outro banco, será preciso adaptar a integração. Colocar uma chave Pix de outro banco no arquivo não realiza essa adaptação.
+Na conta Efí, abra **API > Aplicações**, crie ou edite a aplicação e habilite API Pix. Separe o Client ID e Client Secret do mesmo ambiente do certificado. Use `EFI_SANDBOX=true` para homologação ou `false` para produção. Não misture certificado de produção com credenciais de teste.
 
-### Obter o token e uma URL HTTPS
+Habilite os escopos `cob.write`, `cob.read`, `pix.read`, `payloadlocation.read`, `webhook.write` e `webhook.read`. Não é necessário conceder envio de Pix para receber pedidos. Confira as [credenciais e os certificados na documentação Efí](https://dev.efipay.com.br/docs/api-pix/credenciais/).
 
-1. Entre no [Mercado Pago Developers](https://www.mercadopago.com.br/developers/pt) com a conta que deve receber os pagamentos.
-2. Acesse **Suas integrações**, crie ou abra a aplicação e consulte **Credenciais**. Se precisar selecionar a solução, use a configuração de pagamentos online compatível com Checkout API/Pix deste projeto.
-3. Copie o **Access Token** do ambiente que pretende usar. Para cobranças reais, conclua a ativação das credenciais de produção. Os prefixos dos tokens não são uma forma confiável de distinguir todos os ambientes; confira a identificação no painel. Veja a [documentação de credenciais](https://www.mercadopago.com.br/developers/pt/docs/your-integrations/credentials).
-4. Coloque o token em `MERCADOPAGO_ACCESS_TOKEN`. Credenciais de teste devem ser usadas com o fluxo e as contas de teste definidos pelo provedor; elas não recebem dinheiro real da delegação.
-5. Publique na Vercel seguindo a seção 8. Você pode fazer o primeiro deploy apenas com Firebase, sem liberar cobranças, para descobrir seu domínio.
-6. Com o domínio definido, preencha `APP_URL` com a URL pública, sem barra ao final:
+`EFI_PIX_KEY` é uma chave Pix cadastrada na conta Efí recebedora. Não é a senha bancária. `EFI_CLIENT_SECRET` não é a senha do certificado. O token OAuth é obtido e renovado pelo servidor; você não precisa copiar tokens temporários para o arquivo.
 
-```dotenv
-APP_URL=https://inter-da-atletica.vercel.app
-MERCADOPAGO_ACCESS_TOKEN=TOKEN_COPIADO_DO_PAINEL
+### Preparar o certificado .p12
+
+O arquivo completo vira o valor de `EFI_CERTIFICATE_BASE64`. Não coloque o nome do arquivo ou caminho nesse campo. O projeto ignora arquivos .p12, .pfx, .pem e .key no Git e no envio via Vercel CLI. Nunca coloque certificados em `public/`.
+
+Se você já preparou o certificado no arquivo local, reaproveite o valor existente. Para converter outro certificado no PowerShell, escolha o caminho correto e copie o resultado para a área de transferência:
+
+```powershell
+$p12Path = "C:\Certificados\producao.p12"
+Set-Clipboard -Value ([Convert]::ToBase64String([System.IO.File]::ReadAllBytes($p12Path)))
 ```
 
-Use seu endereço real. `http://localhost:3000` serve para login e navegação local, mas **o código bloqueia a criação de Pix quando `APP_URL` não começa com `https://`**. O provedor também não consegue enviar eventos ao `localhost` do seu computador. Para o primeiro teste integrado, use o app publicado e mantenha acesso e divulgação sob seu controle.
+Cole o resultado inteiro depois de `EFI_CERTIFICATE_BASE64=` no arquivo e no campo correspondente da Vercel. Base64 não criptografa o arquivo: trate esse texto como uma credencial privada. Se o .p12 tiver senha, preencha `EFI_CERTIFICATE_PASSWORD`; caso contrário, deixe vazio.
 
-### Obter o segredo do webhook
+### Conferir a autenticação sem criar cobrança
 
-Webhook é a chamada que o Mercado Pago faz ao servidor para avisar uma alteração no pagamento.
+Com as variáveis preenchidas em .env.local:
 
-1. Na sua aplicação Mercado Pago, abra **Webhooks / Notificações**.
-2. Configure a URL de notificação do ambiente correspondente:
-
-```text
-https://SEU_DOMINIO/api/webhooks/mercadopago
+```powershell
+npm run efi:check
 ```
 
-3. Selecione o evento **Payments / Pagamentos** e salve.
-4. Copie a **assinatura secreta / secret signature** exibida na configuração para:
+Esse comando carrega o certificado e solicita somente um token OAuth. Exibe o ambiente e o resultado, sem imprimir credenciais nem criar ou alterar cobranças. Ele verifica a autenticação, mas não comprova que todos os escopos de cobrança e webhook estão habilitados.
 
-```dotenv
-MERCADOPAGO_WEBHOOK_SECRET=SEGREDO_COPIADO_DA_CONFIGURACAO_DE_WEBHOOKS
+### URL pública e confirmação por webhook
+
+Defina `APP_URL=https://SEU_DOMINIO`, sem caminho ou barra final. Cadastre na Vercel as variáveis Firebase, as variáveis Efí desta seção e o CRON_SECRET. O certificado deve entrar como variável Base64, e não como arquivo versionado.
+
+Gere um segredo específico para o webhook caso ainda não tenha um:
+
+```powershell
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ```
 
-Não invente esse valor nem copie o Access Token nele. Esse segredo precisa corresponder ao que assina os eventos recebidos. O servidor exige a assinatura e consulta o pagamento no provedor antes de liberar o QR. Veja a [documentação de Webhooks](https://www.mercadopago.com.br/developers/pt/docs/iset/additional-content/your-integrations/notifications/webhooks).
+Guarde o resultado em `EFI_WEBHOOK_SECRET` no .env.local e na Vercel. Use o mesmo segredo nos dois ambientes que configuram e recebem esse webhook. Ele é criado por você, não é fornecido pela Efí, e não deve ser igual ao CRON_SECRET.
 
-Cadastre ou atualize esses valores também na Vercel e faça novo deploy. O simulador de webhook ajuda a verificar a chamada, mas sozinho não prova um pagamento real correspondente a um pedido do app. Antes da divulgação, valide o fluxo completo com uma compra real de baixo valor e confira o recebimento na conta.
+**Publique as variáveis antes de cadastrar o webhook.** Com o servidor atualizado e APP_URL local apontando ao domínio definitivo, execute:
+
+```powershell
+# Consulta o cadastro existente, sem alterar:
+npm run efi:webhook -- check
+# Cadastra ou substitui o webhook desta chave Pix:
+npm run efi:webhook -- register
+```
+
+A chave Pix só pode ter um webhook cadastrado. O comando register substitui o destino anterior; use uma chave dedicada se ela já estiver ligada a outro sistema. Não execute o comando contra um domínio de exemplo, localhost ou um deploy ainda protegido por login da Vercel. A Efí precisa alcançar essa rota sem login interativo; o segredo e a origem são validados pela aplicação.
+
+O cadastro usa `/api/webhooks/efi?hmac=SEGREDO&ignorar=`. O script não imprime o segredo. O parâmetro ignorar evita a adição automática do sufixo /pix; a API também aceita esse sufixo para compatibilidade.
+
+Para o recebimento na Vercel, o script cadastra a opção documentada **skip-mTLS**, com `x-skip-mtls-checking: true`. A aplicação exige o segredo, confere o IP na Vercel e sempre consulta a cobrança por mTLS antes de aprovar qualquer pedido. Isso não é validação de certificado do remetente no TLS de entrada. A documentação explica a [opção skip-mTLS e a proteção por origem e hash](https://dev.efipay.com.br/en/docs/api-pix/webhooks/).
+
+O IP permitido por padrão é `34.193.116.226`. Se a Efí alterar seus IPs, atualize `EFI_WEBHOOK_ALLOWED_IPS`, com endereços separados por vírgula, após conferir a documentação. Não adicione IPs de visitantes para contornar recusas. A verificação usa o [header definido pela Vercel](https://vercel.com/docs/headers/request-headers#x-forwarded-for); outra hospedagem ou proxy precisa de configuração própria para verificar a origem. Localmente, a rota exige o segredo mas não simula a verificação de IP feita na Vercel.
+
+### Cobranças, QR e teste de ponta a ponta
+
+Cada pedido tem um txid estável, gravado antes da chamada à Efí, e uma referência privada em `pixTransactions`. Repetir a tentativa usa o mesmo identificador; não cria outra cobrança com outro txid. O servidor confere chave recebedora, txid, valor original e recebimentos confirmados antes de liberar a retirada. A imagem do Pix é gerada a partir do copia e cola retornado pela Efí.
+
+O CPF é enviado na criação da cobrança e não é salvo no banco do aplicativo. Se a resposta da criação for incerta, uma trava de até três minutos evita conciliar a reserva enquanto a chamada pode estar em andamento. Depois, tente novamente pelo mesmo pedido.
+
+Homologação e produção ficam identificadas nos pedidos e não são misturadas nas telas nem na retirada. Na homologação, a Efí simula confirmação automática para cobranças de R$ 0,01 a R$ 10,00; acima disso, ficam ativas. Para ensaiar o fluxo nesse ambiente, cadastre uma opção de teste nesse intervalo. Veja [cobranças imediatas](https://dev.efipay.com.br/docs/api-pix/cobrancas-imediatas/).
+
+Antes da divulgação, faça uma compra real de baixo valor sob seu controle e confira saldo, webhook e retirada. Os testes automatizados não criam cobranças reais. O comando de cadastro de webhook altera apenas a configuração de notificações, não transfere dinheiro.
+
+### Pedidos anteriores à migração
+
+Pedidos da integração antiga não são convertidos em cobranças Efí. Eles exigem conciliação pelo provedor de origem e atendimento da atlética. A expiração não tenta cancelar um pagamento antigo na conta Efí. Revise os pendentes antigos antes de liberar a produção.
 
 ## 7. Gerar `CRON_SECRET` e configurar expiração
 
-Essa variável é criada por você. Ela não vem do Firebase nem do Mercado Pago e não precisa ser igual a outro segredo.
+Essa variável é criada por você. Ela não vem do Firebase nem da Efí e não precisa ser igual a outro segredo.
 
 No terminal:
 
@@ -289,7 +327,7 @@ O arquivo `.env.local` do seu computador **não é enviado automaticamente** par
 2. Na criação do projeto ou em **Project > Settings > Environment Variables**, adicione cada nome da tabela da seção 2 e o respectivo valor. Se a interface oferecer importação de `.env`, confira o resultado campo a campo.
 3. Escolha o ambiente **Production** para o endereço definitivo. Só configure **Preview** se quiser usar essas integrações nos links de prévia; prefira outro projeto Firebase e credenciais de teste para evitar misturar dados e cobranças.
 4. No campo de valor, cole somente o conteúdo: não inclua `NOME=`, comentários ou as aspas externas do arquivo `.env.local`. Para a chave privada, o código aceita `\n` literais ou as quebras reais do certificado completo.
-5. Faça o deploy. No primeiro, se ainda não souber o domínio, deixe Mercado Pago sem configurar. Assim que souber, ajuste `APP_URL`, configure o webhook, preencha as credenciais e faça novo deploy.
+5. Faça o deploy. No primeiro, se ainda não souber o domínio, deixe Efí sem configurar. Assim que souber, ajuste `APP_URL`, configure o webhook, preencha as credenciais e faça novo deploy.
 6. Abra **Deployments** e gere uma nova implantação depois de mudar variáveis. As mudanças valem para novos deploys; `NEXT_PUBLIC_*` entra no JavaScript durante o build. Veja o [guia de variáveis da Vercel](https://vercel.com/docs/environment-variables).
 7. Adicione o domínio definitivo em **Firebase Authentication > Domínios autorizados**. Confira que `APP_URL`, o domínio acessado pelos atletas e a URL de webhook apontam para o endereço planejado.
 
@@ -309,9 +347,9 @@ Não reutilize `APP_URL=http://localhost:3000` em produção. Não cadastre as c
 | `admin` ou `seed` diz que `.env.local` não existe | Você provavelmente preencheu `.env`. Padronize o nome conforme a seção 1; esses scripts não carregam `.env` automaticamente. |
 | Firestore pede um índice | Publique `firestore.indexes.json` com a CLI e aguarde sua criação. Não altere as regras para acesso público. |
 | Cardápio vazio, sem mensagem de erro | Um banco novo não tem pratos. Cadastre opções no painel ou use `npm run seed` somente se desejar exemplos. |
-| Pix informa que precisa configurar provedor/URL | Confira `MERCADOPAGO_ACCESS_TOKEN` e `APP_URL` HTTPS no servidor. Uma chave Pix estática não substitui o token. |
-| Webhook retorna 401 | Confira o segredo da aplicação e ambiente corretos. Uma chamada manual sem assinatura também é recusada por projeto. |
-| Pagou, mas QR não apareceu | Use “Já paguei · verificar”; confira webhook e logs da Vercel. O app exige referência, método, moeda e valor corretos. Não aprove pelo comprovante. |
+| Pix informa que precisa configurar provedor/URL | Confira as variáveis EFI, o certificado, o ambiente e APP_URL HTTPS no servidor. |
+| Webhook retorna 401/403 | Confira EFI_WEBHOOK_SECRET, cadastro da URL e IPs autorizados. Na Vercel, o IP precisa corresponder à Efí; chamadas manuais sem segredo/origem válidos são recusadas. |
+| Pagou, mas QR não apareceu | Use “Já paguei · verificar”; confira webhook e logs da Vercel. O app exige chave recebedora, txid, valor cobrado e recebimento corretos. Não aprove pelo comprovante. |
 | Push não ativa ou não chega | Confira VAPID, sender ID, permissão do navegador e registro no aparelho. Reabra o app após publicar a configuração. Confira também a aba Avisos. |
 | Funciona localmente, mas não na Vercel | Confira as variáveis de Production e refaça o deploy; a configuração local não é sincronizada automaticamente. |
 | Deploy falha por frequência do cron | Confira se o deploy está usando a versão atual de `vercel.json`, com `0 8 * * *`. A expressão antiga `*/15 * * * *` não é aceita no Hobby. |
@@ -350,7 +388,7 @@ O Pix tem uma janela de 30 minutos após a criação. Considere essa janela ao c
 
 Se a criação de cobrança tiver resposta incerta, o pedido pode permanecer pendente com a reserva. Em Meus pedidos, use a tentativa de gerar o Pix novamente para o mesmo pedido: a integração reutiliza a chave da cobrança. O CPF é enviado ao provedor, sem persistência no banco do app.
 
-A rotina de expiração procura referências sem `paymentId`. Se não encontrar a cobrança, mantém a reserva e retorna `unresolved`. Confira a referência no provedor antes de corrigir o pedido/estoque pelo console; nunca libere estoque de uma cobrança que ainda pode ser paga. O app não tem conciliação financeira completa, cancelamento pelo atleta ou reembolso automático. Estornos são executados no provedor; o webhook recebido bloqueia os QR restantes de pedidos estornados.
+A rotina de expiração consulta a cobrança pelo txid. Uma resposta autenticada de cobrança inexistente só libera a reserva após o fim da trava de criação. Em falhas temporárias, divergências ou pedidos legados, mantém a reserva e retorna `unresolved`. O campo `remaining` indica itens do lote ainda não processados; podem existir outros lotes. Confira a referência no provedor antes de corrigir o pedido/estoque pelo console; nunca libere estoque de uma cobrança que ainda pode ser paga. O app não tem conciliação financeira completa, cancelamento pelo atleta ou reembolso automático. Devoluções são executadas no provedor; ao consultar uma devolução concluída, inclusive parcial, o app marca o pedido como estornado e bloqueia os QR restantes para atendimento manual. Devolução em processamento não é considerada concluída. Recebimentos inesperados após fechamento local são sinalizados com paymentReviewRequired, sem liberar QR automaticamente.
 
 Avisos ficam salvos no aplicativo; push é uma tentativa de entrega e pode falhar. O app consulta atualizações a cada 15 segundos e ao voltar ao primeiro plano. Para delegações grandes, coloque o disparo em fila antes de escalar.
 
@@ -367,4 +405,4 @@ npm run build
 npm start
 ```
 
-`npm run dev` abre o modo de desenvolvimento; `npm start` exige um build concluído. Os testes verificam preço, múltiplas refeições, estoque/prazo, quantidades, retirada, validação do checkout e assinatura de webhook. Eles não substituem o teste integrado com suas contas Firebase/Mercado Pago e aparelhos reais.
+`npm run dev` abre o modo de desenvolvimento; `npm start` exige um build concluído. Os testes verificam preço, múltiplas refeições, estoque/prazo, quantidades, retirada, validação do checkout e autenticação do webhook e comportamento simulado da API Efí. Eles não substituem o teste integrado com suas contas Firebase/Efí e aparelhos reais.

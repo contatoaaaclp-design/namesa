@@ -1,0 +1,14 @@
+
+
+# Certificados e credenciais locais
+.git/
+.next/
+node_modules/
+.env*
+*admin-key*.json
+*.p12
+*.pfx
+*.pem
+*.key
+certs/
+certificates/
