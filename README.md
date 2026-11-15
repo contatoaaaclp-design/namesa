@@ -273,7 +273,11 @@ Copie os 64 caracteres gerados para `CRON_SECRET` no arquivo local e no painel d
 
 A rota `/api/cron/expire` espera o header `Authorization: Bearer SEU_CRON_SECRET`. A Vercel usa a variável com esse nome para autenticar chamadas do cron; abrir a rota diretamente no navegador, sem o header, deve retornar **401**. Veja [como proteger cron jobs na Vercel](https://vercel.com/docs/cron-jobs/manage-cron-jobs#securing-cron-jobs).
 
-O `vercel.json` agenda a rotina a cada 15 minutos (`*/15 * * * *`). **Confira o plano antes de publicar:** no Hobby, o limite documentado é uma execução diária; esse agendamento frequente pode impedir o deploy. Use um plano compatível ou configure um agendador externo e remova a entrada de cron da Vercel, preservando as demais configurações do arquivo. Não troque silenciosamente para uma execução diária: as reservas vencidas demorariam a ser liberadas. Consulte os [limites atuais de cron](https://vercel.com/docs/cron-jobs/usage-and-pricing).
+O `vercel.json` usa uma execução **diária**, com a expressão `0 8 * * *` (08h UTC), compatível com o plano Hobby. A Vercel pode executar dentro da janela daquela hora; não há garantia de minuto exato nesse plano. Essa execução é uma limpeza de apoio, não uma verificação a cada 15 minutos. Consulte os [limites de cron da Vercel](https://vercel.com/docs/cron-jobs/usage-and-pricing).
+
+**Para operar durante o Inter:** reservas de Pix vencidos podem ficar presas até a execução diária quando o provedor não enviar um webhook que as libere. Para liberar com frequência, configure um agendador externo para chamar `GET https://SEU_DOMINIO/api/cron/expire` a cada 15 minutos, enviando o header `Authorization: Bearer SEU_CRON_SECRET`, ou use um plano Vercel compatível com essa frequência. Cadastre o segredo no campo privado de headers do agendador, nunca na URL ou no repositório. Não há agendador externo configurado automaticamente neste projeto.
+
+O webhook de pagamento e o botão de verificar Pix continuam funcionando independentemente desse cron. O agendamento diário não deve ser usado como confirmação de pagamento para liberar QR Codes.
 
 A rotina consulta o provedor, sincroniza pagamentos aprovados e tenta cancelar cobranças pendentes vencidas antes de liberar a reserva. Não roda automaticamente só porque `npm run dev` está aberto. Durante o evento, monitore as execuções e o contador `unresolved`, descrito na seção de operação.
 
@@ -310,7 +314,7 @@ Não reutilize `APP_URL=http://localhost:3000` em produção. Não cadastre as c
 | Pagou, mas QR não apareceu | Use “Já paguei · verificar”; confira webhook e logs da Vercel. O app exige referência, método, moeda e valor corretos. Não aprove pelo comprovante. |
 | Push não ativa ou não chega | Confira VAPID, sender ID, permissão do navegador e registro no aparelho. Reabra o app após publicar a configuração. Confira também a aba Avisos. |
 | Funciona localmente, mas não na Vercel | Confira as variáveis de Production e refaça o deploy; a configuração local não é sincronizada automaticamente. |
-| Deploy falha por frequência do cron | O agendamento de 15 minutos pode exceder o plano escolhido; leia a seção 7 antes de alterar `vercel.json`. |
+| Deploy falha por frequência do cron | Confira se o deploy está usando a versão atual de `vercel.json`, com `0 8 * * *`. A expressão antiga `*/15 * * * *` não é aceita no Hobby. |
 
 Se precisar compartilhar um erro para pedir ajuda, copie a mensagem e os **nomes** das variáveis envolvidas, ocultando os valores secretos.
 
