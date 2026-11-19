@@ -1,11 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { efiDiagnostic, EfiClient, EfiError, type EfiConfig, type EfiHttpRequest } from '../lib/payments';
-import { assertWebhookOwnership, assessCharge, cents, efiWebhookUrl, txidForOrder, validTxid, verifyEfiWebhookToken, type EfiCharge } from '../lib/efi-domain';
+import { assertWebhookOwnership, assessCharge, cents, efiWebhookUrl, pixChargeBody, txidForOrder, validTxid, verifyEfiWebhookToken, type EfiCharge } from '../lib/efi-domain';
 const config:EfiConfig={clientId:'test',clientSecret:'test-only',certificate:Buffer.from('mocked'),passphrase:'',pixKey:'test-pix-key',environment:'sandbox'};
 const txid=txidForOrder('athlete-order','sandbox');
 const expected={txid,total:2200,key:config.pixKey};
 const charge:EfiCharge={txid,status:'CONCLUIDA',chave:config.pixKey,valor:{original:'22.00'},pix:[{txid,endToEndId:'receipt-1',valor:'22.00'}]};
+test('checkout Pix usa o corpo aceito pela Efí sem propriedades adicionais em valor',()=>{
+ const now=Date.parse('2026-11-19T12:00:00-03:00');
+ const body=pixChargeBody({total:550,expiresAt:new Date(now+1800000).toISOString(),customer:'Atleta'},'12345678909',config.pixKey,now);
+ assert.deepEqual(body,{
+  calendario:{expiracao:1800},devedor:{cpf:'12345678909',nome:'Atleta'},
+  valor:{original:'5.50'},chave:config.pixKey,solicitacaoPagador:'Inter na Mesa - refeições da delegação',
+ });
+});
 test('txid estável, alfanumérico e separado por pedido e ambiente',()=>{
  assert.equal(txid,txidForOrder('athlete-order','sandbox'));assert.equal(validTxid(txid),true);
  assert.notEqual(txid,txidForOrder('other-order','sandbox'));assert.notEqual(txid,txidForOrder('athlete-order','production'));

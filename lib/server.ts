@@ -8,7 +8,7 @@ import type { DecodedIdToken } from 'firebase-admin/auth';
 import { db, messaging } from './firebase-admin';
 import { checkoutSchema, priceCart, assertCollectable } from './domain';
 import { efiClient } from './payments';
-import { assessCharge, txidForOrder, validTxid, efiWebhookUrl } from './efi-domain';
+import { assessCharge, txidForOrder, validTxid, efiWebhookUrl, pixChargeBody } from './efi-domain';
 import type { Menu, Order } from './types';
 function assertEfiOrder(order: Order) {
  const client = efiClient();
@@ -53,12 +53,7 @@ export async function checkout(user: DecodedIdToken, raw: unknown) {
  });
  order = (await ref.get()).data() as Order;
  let charge = await client.getCharge(order.paymentId!);
- if(!charge) charge = await client.createCharge(order.paymentId!,{
-  calendario:{expiracao:Math.max(1,Math.floor((Date.parse(order.expiresAt)-Date.now())/1000))},
-  devedor:{cpf:data.cpf,nome:order.customer.slice(0,200)},
-  valor:{original:(order.total/100).toFixed(2),modalidadeAlteracao:0},chave:client.config.pixKey,
-  solicitacaoPagador:'Inter na Mesa - refeições da delegação',
- });
+ if(!charge) charge = await client.createCharge(order.paymentId!,pixChargeBody(order,data.cpf,client.config.pixKey));
  assessCharge(charge,{txid:order.paymentId!,total:order.total,key:client.config.pixKey});
  let pix = charge.pixCopiaECola;
  if(!pix && charge.loc?.id && charge.status==='ATIVA') pix = (await client.call<{qrcode:string}>('/v2/loc/'+charge.loc.id+'/qrcode')).qrcode;

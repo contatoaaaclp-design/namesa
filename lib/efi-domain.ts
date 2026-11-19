@@ -4,6 +4,15 @@ export type EfiPix = { txid?: string; endToEndId: string; valor: string; horario
 export type EfiCharge = { txid: string; status: string; chave: string; valor: { original: string }; pixCopiaECola?: string; loc?: { id: number }; pix?: EfiPix[] };
 export const validTxid = (id: string) => /^[a-zA-Z0-9]{26,35}$/.test(id);
 export const txidForOrder = (id: string, environment: EfiEnvironment) => createHash('sha256').update(`inter-na-mesa:${environment}:${id}`).digest('hex').slice(0, 32);
+export function pixChargeBody(order: { total: number; expiresAt: string; customer: string }, cpf: string, key: string, now = Date.now()) {
+ return {
+  calendario: { expiracao: Math.max(1, Math.floor((Date.parse(order.expiresAt) - now) / 1000)) },
+  devedor: { cpf, nome: order.customer.slice(0, 200) },
+  valor: { original: (order.total / 100).toFixed(2) },
+  chave: key,
+  solicitacaoPagador: 'Inter na Mesa - refeições da delegação',
+ };
+}
 export function cents(value: string) {
  if (!/^\d{1,10}\.\d{2}$/.test(value)) throw new Error('Valor de pagamento inválido retornado pela Efí.');
  const [whole, fraction] = value.split('.'); return Number(whole) * 100 + Number(fraction);
