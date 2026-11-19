@@ -80,7 +80,15 @@ export class EfiClient {
  async checkCredentials() { await this.accessToken(); return {environment:this.config.environment}; }
  async getCharge(txid:string):Promise<EfiCharge|null> {
   if(!validTxid(txid))throw new Error('Identificador Pix inválido.');
-  try{return await this.call<EfiCharge>('/v2/cob/'+txid);}catch(error){if(error instanceof EfiError && error.status===404 && ['cobranca_nao_encontrada','NaoEncontrado','CobNaoEncontrada'].includes(error.providerCode))return null;throw error;}
+  try{return await this.call<EfiCharge>('/v2/cob/'+txid);}catch(error){
+   // Efí documents missing charges as HTTP 400 + cobranca_nao_encontrada.
+   // Only this exact 400 means absence; validation and permission errors must propagate.
+   if(error instanceof EfiError && (
+    error.status===400 && error.providerCode==='cobranca_nao_encontrada' ||
+    error.status===404 && ['cobranca_nao_encontrada','NaoEncontrado','CobNaoEncontrada'].includes(error.providerCode)
+   ))return null;
+   throw error;
+  }
  }
  async createCharge(txid:string,body:unknown) {
   if(!validTxid(txid))throw new Error('Identificador Pix inválido.');

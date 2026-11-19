@@ -46,13 +46,30 @@ test('401 renova token uma vez sem mascarar erro de permissão',async()=>{
  const denied=new EfiClient(config,async req=>req.path==='/oauth/token'?{status:200,data:{access_token:'t',expires_in:3600}}:{status:403,data:{nome:'acesso_negado',secret:'must-not-leak'}});
  await assert.rejects(()=>denied.getCharge(txid),e=>e instanceof EfiError && e.status===403 && !e.message.includes('must-not-leak'));
 });
-test('somente 404 conhecido é ausência de cobrança; erro transitório não libera reserva',async()=>{
- for(const status of [403,500]){
-  const client=new EfiClient(config,async req=>req.path==='/oauth/token'?{status:200,data:{access_token:'t',expires_in:3600}}:{status,data:{nome:'cobranca_nao_encontrada'}});
+test('somente ausência conhecida em 400/404 permite criar ou liberar reserva',async()=>{
+ for(const [status,nome] of [[403,'cobranca_nao_encontrada'],[500,'cobranca_nao_encontrada'],[400,'valor_invalido'],[400,'NaoEncontrado'],[404,'rota_nao_encontrada']] as const){
+  const client=new EfiClient(config,async req=>req.path==='/oauth/token'?{status:200,data:{access_token:'t',expires_in:3600}}:{status,data:{nome}});
   await assert.rejects(()=>client.getCharge(txid));
  }
- const missing=new EfiClient(config,async req=>req.path==='/oauth/token'?{status:200,data:{access_token:'t',expires_in:3600}}:{status:404,data:{nome:'cobranca_nao_encontrada'}});
- assert.equal(await missing.getCharge(txid),null);
+ for(const status of [400,404]){
+  const missing=new EfiClient(config,async req=>req.path==='/oauth/token'?{status:200,data:{access_token:'t',expires_in:3600}}:{status,data:{nome:'cobranca_nao_encontrada'}});
+  assert.equal(await missing.getCharge(txid),null);
+ }
+});
+
+test('primeiro checkout continua com PUT após consulta retornar 400 de cobrança ausente',async()=>{
+ const calls:EfiHttpRequest[]=[];
+ const client=new EfiClient(config,async req=>{
+  calls.push(req);
+  if(req.path==='/oauth/token')return {status:200,data:{access_token:'t',expires_in:3600}};
+  return req.method==='GET'?{status:400,data:{nome:'cobranca_nao_encontrada'}}:{status:201,data:charge};
+ });
+ const body={calendario:{expiracao:1800},valor:{original:'22.00'},chave:config.pixKey};
+ const existing=await client.getCharge(txid);
+ const result=existing || await client.createCharge(txid,body);
+ assert.deepEqual(result,charge);
+ assert.deepEqual(calls.filter(req=>req.path!=='/oauth/token').map(req=>[req.method,req.path]),[['GET','/v2/cob/'+txid],['PUT','/v2/cob/'+txid]]);
+ assert.deepEqual(calls.at(-1)?.body,body);
 });
 test('conflito de criação recupera o mesmo txid e cancelamento usa PATCH correto',async()=>{
  const calls:EfiHttpRequest[]=[];

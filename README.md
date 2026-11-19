@@ -252,7 +252,9 @@ Com as variáveis preenchidas em .env.local:
 npm run efi:check
 ```
 
-Esse comando carrega o certificado e solicita somente um token OAuth. Exibe o ambiente e o resultado, sem imprimir credenciais nem criar ou alterar cobranças. Ele verifica a autenticação, mas não comprova que todos os escopos de cobrança e webhook estão habilitados.
+Esse comando carrega o certificado, solicita um token OAuth e consulta um `txid` aleatório para verificar o escopo `cob.read`. Exibe o ambiente e o resultado, sem imprimir credenciais nem criar ou alterar cobranças. Não comprova os escopos de criação de cobrança ou webhook.
+
+A consulta de uma cobrança inexistente pode retornar HTTP 400 com `cobranca_nao_encontrada`, conforme a [documentação da Efí](https://dev.efipay.com.br/docs/api-pix/cobrancas-imediatas/). O app reconhece essa resposta e segue para criar o Pix; outros erros HTTP 400 continuam bloqueando a operação.
 
 ### URL pública e confirmação por webhook
 

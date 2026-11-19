@@ -109,7 +109,7 @@ export async function expireOrder(id:string) {
   return after==='expired' || after==='paid' || after==='refunded';
  }
  if(await client.getCharge(order.paymentId!))throw new Error('A cobrança existe, mas a referência local exige conciliação.');
- // Confirmed 404 after the creation lease elapsed: no charge exists and new attempts are expired.
+ // Confirmed missing charge after the creation lease elapsed: new attempts are expired.
  await db().runTransaction(async tx=>{
   const current=(await tx.get(ref)).data() as Order;
   if(current.status!=='pending' || Date.parse(current.expiresAt)>Date.now() || (current.paymentCreateLeaseUntil && Date.parse(current.paymentCreateLeaseUntil)>Date.now()))return;
