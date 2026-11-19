@@ -7,8 +7,20 @@ export type EfiConfig = { clientId: string; clientSecret: string; certificate: B
 export type EfiHttpRequest = { origin: string; path: string; method: string; headers: Record<string,string>; body?: unknown };
 export type EfiHttpResponse = { status: number; data: unknown };
 export type EfiTransport = (req: EfiHttpRequest) => Promise<EfiHttpResponse>;
+export function efiDiagnostic(data:unknown):string {
+ if((data as {nome?:string})?.nome==='webhook_nao_encontrado')return 'Esta chave Pix ainda não possui webhook cadastrado. Use register após configurar o deploy.';
+ const message=String((data as {mensagem?:unknown;message?:unknown})?.mensagem || (data as {message?:unknown})?.message || '').toLowerCase();
+ const http=/código http (\d{3})|codigo http (\d{3})/.exec(message);
+ if(http)return 'A URL do webhook respondeu HTTP '+(http[1] || http[2])+'. Confira o deploy, a proteção de acesso e o segredo no servidor.';
+ if(message.includes('tls') || message.includes('mtls'))return 'A validação TLS do webhook foi recusada. Confira o suporte a webhook sem mTLS e o cabeçalho de cadastro.';
+ if(message.includes('inacessível') || message.includes('inacessivel'))return 'A Efí não conseguiu acessar a URL do webhook. Confira APP_URL e o deploy público.';
+ if(message.includes('tempo limite'))return 'A URL do webhook excedeu o tempo limite de resposta.';
+ if(message.includes('https'))return 'O webhook precisa de uma URL HTTPS pública.';
+ if(message.includes('chave'))return 'Confira se a chave Pix pertence à conta Efí e ao ambiente configurado.';
+ return '';
+}
 export class EfiError extends Error {
- constructor(public status: number, public providerCode = '') {
+ constructor(public status: number, public providerCode = '', public diagnostic = '') {
   super(status===401 ? 'A Efí recusou as credenciais. Confira o ambiente, Client ID, Client Secret e certificado.' : status===403 ? 'A aplicação Efí não tem permissão para esta operação. Confira os escopos.' : status>=500 || status===0 ? 'Não foi possível consultar a Efí. Tente novamente em instantes.' : 'A Efí recusou a operação Pix. Confira os dados e as permissões com a atlética.');
  }
 }
@@ -60,7 +72,7 @@ export class EfiClient {
    const token=await this.accessToken();
    const response=await this.send({origin:this.origin,path,method,body,headers:{'Content-Type':'application/json',...headers,Authorization:'Bearer '+token}});
    if(response.status===401 && attempt===0){this.token=undefined;continue;}
-   if(response.status<200 || response.status>=300){const data=response.data as {nome?:string;type?:string};throw new EfiError(response.status,data.nome || data.type?.split('/').pop() || '');}
+   if(response.status<200 || response.status>=300){const data=response.data as {nome?:string;type?:string};const code=data.nome || data.type?.split('/').pop() || '';throw new EfiError(response.status,/^[a-zA-Z0-9_-]{1,80}$/.test(code)?code:'',efiDiagnostic(response.data));}
    return response.data as T;
   }
   throw new EfiError(401);

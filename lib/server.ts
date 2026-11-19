@@ -1,5 +1,8 @@
+import { menuQuantities } from './customization';
+import { checkoutCard, expireCardOrder } from './card-server';
 import { randomBytes } from 'node:crypto';
 import QRCode from 'qrcode';
+import { paymentDeadline } from './sales';
 import { FieldValue } from 'firebase-admin/firestore';
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import { db, messaging } from './firebase-admin';
@@ -15,6 +18,7 @@ function assertEfiOrder(order: Order) {
 }
 export async function checkout(user: DecodedIdToken, raw: unknown) {
  const data = checkoutSchema.parse(raw);
+ if(data.paymentMethod === 'credit') return checkoutCard(user,data);
  const client = efiClient();
  efiWebhookUrl(process.env.APP_URL || '', process.env.EFI_WEBHOOK_SECRET || '');
  if (!user.email || !user.email_verified) throw new Error('Entre com uma conta Google com e-mail verificado.');
@@ -25,17 +29,19 @@ export async function checkout(user: DecodedIdToken, raw: unknown) {
   if (existing.exists) return;
   const pending = await tx.get(db().collection('orders').where('uid','==',user.uid).where('status','==','pending'));
   if (pending.docs.filter(d=>d.data().paymentProvider==='efi' && d.data().paymentEnvironment===client.config.environment).length >= 3) throw new Error('Você já tem três pagamentos pendentes. Conclua um deles antes de continuar.');
-  const docs = await Promise.all(data.items.map(i=>tx.get(db().collection('menus').doc(i.menuId))));
+  const docs = await Promise.all([...menuQuantities(data.items).keys()].map(id=>tx.get(db().collection('menus').doc(id))));
   const menus = docs.filter(d=>d.exists).map(d=>({...d.data(),id:d.id} as Menu));
   const priced = priceCart(menus,data.items);
+  if (data.expectedTotal !== undefined && data.expectedTotal !== priced.total) throw new Error('O preço mudou. Confira a sacola e confirme o novo total.');
   const now = new Date();
-  const order: Order = {id:ref.id,uid:user.uid,customer:user.name || user.email!,email:user.email!,createdAt:now.toISOString(),expiresAt:new Date(now.getTime()+1800000).toISOString(),status:'pending',...priced,token:randomBytes(32).toString('hex'),note:data.note,paymentId:txid,paymentProvider:'efi',paymentEnvironment:client.config.environment};
+  const order: Order = {id:ref.id,uid:user.uid,customer:user.name || user.email!,email:user.email!,createdAt:now.toISOString(),expiresAt:paymentDeadline(priced.items,now.getTime()),status:'pending',...priced,token:randomBytes(32).toString('hex'),note:data.note,paymentId:txid,paymentProvider:'efi',paymentEnvironment:client.config.environment};
   tx.create(ref,order);
   tx.create(db().collection('pixTransactions').doc(txid),{orderId:ref.id,environment:client.config.environment});
-  docs.forEach((doc,i)=>tx.update(doc.ref,{reserved:FieldValue.increment(data.items[i].quantity)}));
+  docs.forEach(doc=>tx.update(doc.ref,{reserved:FieldValue.increment(menuQuantities(data.items).get(doc.id)!)}));
  });
  let order = (await ref.get()).data() as Order;
  assertEfiOrder(order);
+ if(order.paymentMethod === 'credit') throw new Error('Este pedido deve ser pago com crédito.');
  if (order.status !== 'pending') return order;
  if (order.pix) { await syncPayment(order.paymentId!); return (await ref.get()).data() as Order; }
  // A bounded creation lease prevents expiry from releasing stock while an API call is in flight.
@@ -81,8 +87,8 @@ export async function syncPayment(txid: string) {
   else if(status==='paid' && ['expired','cancelled'].includes(order.status))tx.update(ref,{paymentReviewRequired:true});
   else if(status==='refunded' && ['paid','pending'].includes(order.status))tx.update(ref,{status:'refunded'});
   else if(status==='expired' && order.status==='pending'){
-   const menus = await Promise.all(order.items.map(i=>tx.get(db().collection('menus').doc(i.menuId))));
-   menus.forEach((m,i)=>{if(m.exists)tx.update(m.ref,{reserved:Math.max(0,(m.data()?.reserved || 0)-order.items[i].quantity)});});
+   const menus = await Promise.all([...menuQuantities(order.items).keys()].map(id=>tx.get(db().collection('menus').doc(id))));
+   menus.forEach((m,i)=>{if(m.exists)tx.update(m.ref,{reserved:Math.max(0,(m.data()?.reserved || 0)-menuQuantities(order.items).get(m.id)!)});});
    tx.update(ref,{status:'expired'});
   }
  });
@@ -91,6 +97,7 @@ export async function syncPayment(txid: string) {
 export async function expireOrder(id:string) {
  const ref=db().collection('orders').doc(id);
  const order=(await ref.get()).data() as Order;
+ if(order.paymentMethod==='credit')return expireCardOrder(id);
  const client=assertEfiOrder(order);
  if(order.status!=='pending')return true;
  if(Date.parse(order.expiresAt)>Date.now() || (order.paymentCreateLeaseUntil && Date.parse(order.paymentCreateLeaseUntil)>Date.now()))return false;
@@ -106,8 +113,8 @@ export async function expireOrder(id:string) {
  await db().runTransaction(async tx=>{
   const current=(await tx.get(ref)).data() as Order;
   if(current.status!=='pending' || Date.parse(current.expiresAt)>Date.now() || (current.paymentCreateLeaseUntil && Date.parse(current.paymentCreateLeaseUntil)>Date.now()))return;
-  const menus=await Promise.all(current.items.map(i=>tx.get(db().collection('menus').doc(i.menuId))));
-  menus.forEach((m,i)=>{if(m.exists)tx.update(m.ref,{reserved:Math.max(0,(m.data()?.reserved || 0)-current.items[i].quantity)});});
+  const menus=await Promise.all([...menuQuantities(current.items).keys()].map(id=>tx.get(db().collection('menus').doc(id))));
+  menus.forEach((m,i)=>{if(m.exists)tx.update(m.ref,{reserved:Math.max(0,(m.data()?.reserved || 0)-menuQuantities(current.items).get(m.id)!)});});
   tx.update(ref,{status:'expired'});
  });
  return (await ref.get()).data()?.status!=='pending';
@@ -120,7 +127,8 @@ export async function inspectTicket(code: string, collect = false, staff = '') {
  return db().runTransaction(async tx => {
   const ref = db().collection('orders').doc(id); const doc = await tx.get(ref); const order = doc.data() as Order | undefined;
   if (!order || order.token !== token || !order.items[index]) throw new Error('Código não encontrado.');
-  if (order.paymentProvider === 'efi') assertEfiOrder(order);
+  if(order.paymentMethod==='credit') { if(order.paymentProvider!=='efi' || order.paymentEnvironment!==(process.env.EFI_SANDBOX==='false'?'production':'sandbox') || !/^\d+$/.test(order.paymentId || ''))throw new Error('Referência do cartão inválida ou de outro ambiente.'); }
+  else if (order.paymentProvider === 'efi') assertEfiOrder(order);
   const menu = await tx.get(db().collection('menus').doc(order.items[index].menuId));
   assertCollectable(order, index, menu.data()?.ready === true);
   const item = order.items[index];

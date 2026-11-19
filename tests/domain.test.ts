@@ -8,7 +8,7 @@ test('preço vem do cardápio; compra combina datas e refeições', () => {
  assert.equal(result.total, 7200); assert.equal(result.items.length, 2); assert.equal(result.items[1].meal, 'Jantar');
 });
 test('recusa prazo encerrado, estoque esgotado, duplicação e quantidade inválida', () => {
- assert.throws(() => priceCart(seedMenus, [{ menuId: 'menu-0-0-0', quantity: 1 }], Date.parse('2026-11-20T09:00:00-03:00')));
+ assert.throws(() => priceCart(seedMenus, [{ menuId: 'menu-0-0-0', quantity: 1 }], Date.parse('2026-11-20T10:30:00-03:00')));
  assert.throws(() => priceCart(seedMenus.map(m => ({ ...m, reserved: 100 })), [{ menuId: 'menu-0-0-0', quantity: 1 }], now));
  assert.throws(() => priceCart(seedMenus, [{ menuId: 'menu-0-0-0', quantity: 1 }, { menuId: 'menu-0-0-0', quantity: 1 }], now));
  assert.throws(() => priceCart(seedMenus, [{ menuId: 'menu-0-0-0', quantity: -1 }], now));

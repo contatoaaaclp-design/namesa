@@ -1,0 +1,42 @@
+name: Lembretes de compra do Inter
+on:
+  schedule:
+    # UTC: almoço 10h (13h UTC), jantar 17h30 (20h30 UTC).
+    # Chamadas repetidas permitem recuperar atrasos; a API deduplica os avisos.
+    - cron: '*/5 13,20 20-22 11 *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Somente verificar, sem enviar notificações'
+        type: boolean
+        default: true
+permissions: {}
+concurrency:
+  group: inter-purchase-reminders
+  cancel-in-progress: false
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      APP_URL: ${{ secrets.APP_URL }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+    steps:
+      - name: Chamar o aplicativo
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo 'Configure os secrets APP_URL e CRON_SECRET no repositório.'
+            exit 1
+          fi
+          if [ "${GITHUB_EVENT_NAME}" = schedule ] && [ "$(date -u +%Y)" != 2026 ]; then
+            echo 'O evento terminou; nenhum envio solicitado.'
+            exit 0
+          fi
+          suffix=''
+          if [ "$DRY_RUN" = true ]; then suffix='?dryRun=1'; fi
+          curl --fail-with-body --silent --show-error --max-time 65 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${APP_URL%/}/api/cron/reminders${suffix}"

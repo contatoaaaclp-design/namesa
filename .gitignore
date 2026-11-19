@@ -13,3 +13,9 @@ node_modules/
 *.key
 certs/
 certificates/
+
+# Arquivos públicos usados somente na investigação da importação
+data/imports/*.html
+data/imports/*.js
+data/imports/saipos-menu.json
+data/imports/saipos-store.json

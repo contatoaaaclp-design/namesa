@@ -34,3 +34,7 @@ export function efiWebhookUrl(appUrl: string, secret: string) {
  if(url.protocol!=='https:' || url.username || url.password || url.hostname==='localhost' || url.pathname!=='/' || url.search || url.hash)throw new Error('APP_URL deve ser a origem HTTPS pública do aplicativo, sem caminhos.');
  url.pathname='/api/webhooks/efi';url.searchParams.set('hmac',secret);url.searchParams.set('ignorar','');return url.toString();
 }
+
+export function assertWebhookOwnership(existingUrl:string,targetUrl:string) {
+ if(new URL(existingUrl).origin!==new URL(targetUrl).origin)throw new Error('Esta chave Pix já atende outro domínio. Cadastro bloqueado para preservar o outro projeto. Crie uma chave Pix dedicada e atualize EFI_PIX_KEY.');
+}

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { EfiClient, EfiError, type EfiConfig, type EfiHttpRequest } from '../lib/payments';
-import { assessCharge, cents, efiWebhookUrl, txidForOrder, validTxid, verifyEfiWebhookToken, type EfiCharge } from '../lib/efi-domain';
+import { efiDiagnostic, EfiClient, EfiError, type EfiConfig, type EfiHttpRequest } from '../lib/payments';
+import { assertWebhookOwnership, assessCharge, cents, efiWebhookUrl, txidForOrder, validTxid, verifyEfiWebhookToken, type EfiCharge } from '../lib/efi-domain';
 const config:EfiConfig={clientId:'test',clientSecret:'test-only',certificate:Buffer.from('mocked'),passphrase:'',pixKey:'test-pix-key',environment:'sandbox'};
 const txid=txidForOrder('athlete-order','sandbox');
 const expected={txid,total:2200,key:config.pixKey};
@@ -61,4 +61,18 @@ test('conflito de criação recupera o mesmo txid e cancelamento usa PATCH corre
  assert.ok(calls.filter(r=>r.path!=='/oauth/token').every(r=>r.path==='/v2/cob/'+txid));
  assert.deepEqual(calls.at(-1)?.body,{status:'REMOVIDA_PELO_USUARIO_RECEBEDOR'});assert.equal(calls.at(-1)?.method,'PATCH');
  assert.equal(calls.filter(r=>r.method==='POST'&&r.path!=='/oauth/token').length,0);
+});
+
+test('cadastro não substitui webhook de outro projeto, mesmo com prefixo de domínio parecido',()=>{
+ assert.doesNotThrow(()=>assertWebhookOwnership('https://internamesa.vercel.app/api/old','https://internamesa.vercel.app/api/webhooks/efi'));
+ assert.throws(()=>assertWebhookOwnership('https://sambap.vercel.app/api/webhooks/efi/pix','https://internamesa.vercel.app/api/webhooks/efi'));
+ assert.throws(()=>assertWebhookOwnership('https://internamesa.vercel.app.attacker.example','https://internamesa.vercel.app/api/webhooks/efi'));
+});
+test('diagnóstico informa a categoria do erro sem vazar dados retornados pela Efí',()=>{
+ const privateUrl='https://private.example/webhook?hmac=private-secret';
+ const hint=efiDiagnostic({mensagem:'A URL informada respondeu com o código HTTP 500: '+privateUrl});
+ assert.match(hint,/HTTP 500/);assert.equal(hint.includes('private'),false);
+ assert.match(efiDiagnostic({mensagem:'A autenticação de TLS mútuo não está configurada na URL informada'}),/TLS/);
+ assert.equal(efiDiagnostic({mensagem:'error '+privateUrl}), 'O webhook precisa de uma URL HTTPS pública.');
+ assert.equal(efiDiagnostic(null),'');
 });

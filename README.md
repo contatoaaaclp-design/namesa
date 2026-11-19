@@ -1,6 +1,6 @@
 # Inter na Mesa
 
-Aplicativo PWA para organizar as refeições da delegação no Inter, de **20 a 22 de novembro de 2026**, em horário de Brasília. Usa Next.js, Firebase e Pix via Efí Bank, com hospedagem preparada para a Vercel.
+Aplicativo PWA para organizar as refeições da delegação no Inter, de **20 a 22 de novembro de 2026**, em horário de Brasília. Usa Next.js, Firebase e pagamentos Pix/crédito via Efí Bank, com hospedagem preparada para a Vercel.
 
 ## Por onde começar
 
@@ -342,6 +342,7 @@ Não reutilize `APP_URL=http://localhost:3000` em produção. Não cadastre as c
 | “Firebase do servidor ainda não foi configurado” | Falta `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL` ou `FIREBASE_PRIVATE_KEY` no ambiente que está executando a API. |
 | Erro de chave privada, PEM ou certificado | Confira BEGIN/END, conteúdo completo, aspas no arquivo, `\n` corretos e ausência de vírgula de JSON. Não use `private_key_id`. |
 | `auth/unauthorized-domain` | Cadastre o domínio onde está abrindo o app em Firebase Auth; `localhost` também precisa estar autorizado. |
+| `Component auth has not been registered yet` | O SDK App e o Auth podem estar usando cópias diferentes do núcleo Firebase. Este projeto fixa versões compatíveis com Node 22 em `package.json` e `package-lock.json`. Pare o servidor, execute `npm ci` e reinicie com `npm run dev`. Preserve o lockfile; não instale `@firebase/*` separadamente. |
 | Login Google indisponível ou configuração inválida | Habilite o provedor Google e confira os cinco campos do app Web. Não misture configuração pública de um projeto com conta de serviço de outro. |
 | “Usuário não encontrado” no comando `admin` | Faça login no aplicativo com aquela conta Google primeiro. Depois execute o comando e saia/entre novamente. |
 | `admin` ou `seed` diz que `.env.local` não existe | Você provavelmente preencheu `.env`. Padronize o nome conforme a seção 1; esses scripts não carregam `.env` automaticamente. |
@@ -382,7 +383,7 @@ Uma compra pode combinar várias datas, restaurantes e refeições. Os preços v
 
 Somente o pagamento confirmado pela API libera o QR. O clique em “já paguei” apenas consulta a situação. Depois, a equipe libera a chegada, confere o prato e confirma a entrega. Uma transação no Firestore impede duas retiradas do mesmo item.
 
-O Pix tem uma janela de 30 minutos após a criação. Considere essa janela ao combinar o horário de fechamento da produção com os restaurantes. A exportação de produção contabiliza somente pedidos pagos. As contas da equipe recebem permissão administrativa individual, sem compartilhar senha.
+O Pix tem uma janela de até 30 minutos, limitada ao fechamento da refeição mais próxima na sacola (almoço 10h30, jantar 18h, Brasília). A exportação de produção contabiliza somente pedidos pagos. As contas da equipe recebem permissão administrativa individual, sem compartilhar senha.
 
 ## Operação, conciliação e dados
 
@@ -390,7 +391,7 @@ Se a criação de cobrança tiver resposta incerta, o pedido pode permanecer pen
 
 A rotina de expiração consulta a cobrança pelo txid. Uma resposta autenticada de cobrança inexistente só libera a reserva após o fim da trava de criação. Em falhas temporárias, divergências ou pedidos legados, mantém a reserva e retorna `unresolved`. O campo `remaining` indica itens do lote ainda não processados; podem existir outros lotes. Confira a referência no provedor antes de corrigir o pedido/estoque pelo console; nunca libere estoque de uma cobrança que ainda pode ser paga. O app não tem conciliação financeira completa, cancelamento pelo atleta ou reembolso automático. Devoluções são executadas no provedor; ao consultar uma devolução concluída, inclusive parcial, o app marca o pedido como estornado e bloqueia os QR restantes para atendimento manual. Devolução em processamento não é considerada concluída. Recebimentos inesperados após fechamento local são sinalizados com paymentReviewRequired, sem liberar QR automaticamente.
 
-Avisos ficam salvos no aplicativo; push é uma tentativa de entrega e pode falhar. O app consulta atualizações a cada 15 segundos e ao voltar ao primeiro plano. Para delegações grandes, coloque o disparo em fila antes de escalar.
+Avisos ficam salvos no aplicativo; push é uma tentativa de entrega e pode falhar. O app consulta atualizações a cada dois minutos enquanto está visível e online; ao voltar ao primeiro plano, atualiza se esse intervalo já passou. Para delegações grandes, coloque o disparo em fila antes de escalar.
 
 Confirme com os restaurantes os horários, responsáveis, ingredientes, alergênicos e política de cancelamento. Observações no pedido não garantem substituições. Defina responsável pelo atendimento, política de privacidade e prazo de retenção antes de divulgar.
 
@@ -406,3 +407,140 @@ npm start
 ```
 
 `npm run dev` abre o modo de desenvolvimento; `npm start` exige um build concluído. Os testes verificam preço, múltiplas refeições, estoque/prazo, quantidades, retirada, validação do checkout e autenticação do webhook e comportamento simulado da API Efí. Eles não substituem o teste integrado com suas contas Firebase/Efí e aparelhos reais.
+
+## Crédito à vista: ativação e variáveis
+
+O checkout oferece **Pix sem acréscimo** e **crédito em uma parcela com acréscimo de 3,49%**. Débito permanece indisponível. A taxa é calculada sobre o subtotal das refeições, arredondada para centavos e discriminada antes de pagar, no pedido e no painel administrativo. Exemplo: refeições de R$ 22,00 + taxa de R$ 0,77 = R$ 22,77. Esse acréscimo não é um cálculo para garantir o valor líquido: a Efí aplica a tarifa contratada sobre o total cobrado. Confira sua condição de recebimento na conta.
+
+O crédito fica desabilitado até completar a configuração abaixo; o Pix continua disponível.
+
+1. Na Efí, abra **API > Aplicações**, edite a aplicação e habilite **API de Emissão de cobranças**. A API Pix e a API de cobranças são serviços diferentes. O certificado `.p12` já configurado atende ao Pix; cobranças usa Client ID/Secret via OAuth, sem outro certificado.
+2. Cadastre o ramo de atividade e conclua a aprovação de cartão/KYC exigida pela Efí. A documentação informa análise de até cinco dias úteis: confira a liberação antes do Inter. Consulte o [guia oficial de cartão](https://dev.efipay.com.br/docs/api-cobrancas/cartao/).
+3. Abra **API > Introdução > Identificador de conta** e copie para `NEXT_PUBLIC_EFI_PAYEE_CODE`. Este identificador é usado no navegador para tokenizar o cartão. Não coloque Client Secret ou certificado nesse campo.
+4. Se Pix e cobranças usam a mesma aplicação com ambas as APIs habilitadas, deixe `EFI_CARD_CLIENT_ID` e `EFI_CARD_CLIENT_SECRET` vazios: o servidor reutiliza `EFI_CLIENT_ID` e `EFI_CLIENT_SECRET`. Se forem aplicações diferentes, preencha o par `EFI_CARD_*` com as credenciais de cobranças. Os dois campos precisam ser preenchidos juntos. Use sempre o ambiente correspondente a `EFI_SANDBOX`.
+5. Mantenha `APP_URL` com seu domínio público HTTPS e `EFI_WEBHOOK_SECRET` preenchido. Não modifique esses valores enquanto houver cobranças em aberto. O domínio precisa ser acessível pela Efí, sem proteção de login da Vercel.
+6. Preencha `EFI_CREDIT_ENABLED=true`. Copie os valores para **Vercel > Settings > Environment Variables** e faça **novo deploy/build**, inclusive ao alterar o identificador `NEXT_PUBLIC_EFI_PAYEE_CODE`. Para desligar novas compras com cartão, defina a flag como `false`; a conciliação dos pedidos existentes continua funcionando.
+
+```dotenv
+# Exemplo de estrutura: preencha o identificador real da sua conta.
+EFI_CREDIT_ENABLED=true
+NEXT_PUBLIC_EFI_PAYEE_CODE=
+# Deixe vazios para reutilizar as credenciais da aplicação do Pix:
+EFI_CARD_CLIENT_ID=
+EFI_CARD_CLIENT_SECRET=
+```
+
+A biblioteca oficial `payment-token-efi` tokeniza o cartão diretamente no navegador. O servidor recebe somente o token de uso único, o identificador 3DS e os dados do pagador; não salva número do cartão, CVV, CPF, telefone ou token de pagamento no Firestore. O servidor força `installments: 1` na rota atual `POST /v1/charge/card`. Quando o banco solicitar autenticação, o atleta verá **Autenticar com meu banco**, sairá para o ambiente do emissor e retornará aos pedidos.
+
+A URL de notificações do crédito é incluída automaticamente em cada cobrança (`/api/webhooks/efi-card` com segredo). Não execute `efi:webhook register` para cartão: esse comando é exclusivo do Pix. O retorno do 3DS não libera retirada. A API consulta a cobrança autenticada e confere pedido, identificador, valor total, método de pagamento e uma parcela antes de aceitar `approved` ou `paid`. `approved` significa aprovação do cartão; o depósito do dinheiro na conta segue o prazo contratado com a Efí, sem exigir que o atleta espere a liquidação para retirar.
+
+Em caso de resposta incerta, não há reenvio automático do pagamento. O app mantém a reserva e sinaliza **Conferir no provedor**. A notificação pode recuperar o identificador da cobrança; notificações recebidas são gravadas para nova tentativa de conciliação pelo cron. Se continuar inconclusivo, a equipe precisa consultar a Efí antes de ajustar o pedido ou liberar estoque. Recusa definitiva encerra o pedido e libera sua reserva; o atleta pode iniciar outra compra. Estornos continuam sendo feitos na Efí.
+
+Antes de divulgar: teste em homologação a aprovação, a recusa, o desafio 3DS, o retorno após fechar o app, a atualização por notificação e o bloqueio de retirada sem pagamento. Use os [cenários oficiais de homologação](https://dev.efipay.com.br/docs/api-cobrancas/cartao/#homologação-e-cenários-de-teste), com credenciais desse ambiente. Os testes automatizados do projeto usam respostas simuladas e não realizam cobranças reais.
+
+## Horários de venda — Brasília
+
+| Refeição | Aviso para pedir | Bloqueio de novas vendas |
+| --- | --- | --- |
+| Almoço | Até 10h | Às 10h30 do dia da refeição |
+| Jantar | Até 17h30 | Às 18h do dia da refeição |
+
+O aviso aparece no cardápio. A meia hora adicional permite concluir a compra, e o bloqueio é validado no servidor, mesmo se a tela estiver aberta ou alguém tentar chamar a API diretamente. Os dias 20, 21 e 22 são independentes: o fechamento do almoço de sexta não bloqueia os dias seguintes nem o jantar. O prazo fixo vale também para cardápios antigos, sem precisar recadastrar dados. O formulário administrativo mostra o encerramento calculado e não permite alterá-lo.
+
+O Pix dura no máximo 30 minutos e vence no fechamento mais próximo entre as refeições da sacola. No crédito, a compra precisa ser enviada antes do fechamento; uma autenticação já iniciada depende do processamento do banco. O cron concilia e tenta cancelar pagamentos vencidos, liberando reservas somente após confirmação do provedor. A validação do horário de novas vendas não depende do cron nem do plano Vercel.
+
+## Lembretes automáticos de compra
+
+Durante **20, 21 e 22/11/2026**, o app pode enviar um lembrete de almoço às **10h** (vendas até 10h30) e jantar às **17h30** (vendas até 18h), em Brasília. Se o agendador atrasar, a API ainda aceita o disparo até o fechamento; depois disso não envia. Não há lembretes fora do evento.
+
+Os destinatários são atletas que já entraram no aplicativo e ainda não têm um pedido pago ou pagamento pendente válido daquela refeição, data e ambiente. Sem opções publicadas com estoque, não há disparo. O aviso fica na aba **Avisos**; o push exige que o atleta toque em **Ativar notificações** e conceda a permissão do celular. Em **Avisos > Lembretes de compra**, o atleta pode desativar os lembretes sem desativar avisos de chegada.
+
+**O código sozinho não agenda os disparos.** A Vercel Hobby não fornece a frequência necessária no cron atual. Este projeto inclui `.github/workflows/purchase-reminders.yml` para chamar a rota protegida pelo GitHub Actions, a cada cinco minutos nas horas das refeições. Para ativar:
+
+1. Publique estas alterações no branch principal do GitHub e faça o deploy na Vercel. Confirme que `APP_URL` é o domínio definitivo do app.
+2. No repositório GitHub, abra **Settings > Secrets and variables > Actions > New repository secret**.
+3. Cadastre `APP_URL` com a URL HTTPS do app e `CRON_SECRET` com o **mesmo segredo** do ambiente Production da Vercel. Não use o Client Secret da Efí nem o segredo do webhook.
+4. Em **Actions**, habilite workflows se o GitHub solicitar. Execute **Lembretes de compra do Inter > Run workflow**, mantendo `dry_run` marcado, para verificar sem enviar. Fora do horário/dias do evento, o resultado correto é `windows: 0`.
+5. No evento, confira as execuções de Actions e os contadores `notices`, `pushSent` e `pushFailed`. Workflows agendados podem atrasar; se precisar de maior pontualidade, use um agendador externo que chame `GET /api/cron/reminders` a cada cinco minutos com `Authorization: Bearer SEU_CRON_SECRET`. Não coloque o segredo na URL. Use apenas um agendador.
+
+A rotina grava uma entrega por atleta, dia e refeição para evitar duplicação entre chamadas. Cada execução processa um lote e salva o cursor; `remaining: true` significa que a próxima chamada deve continuar. Os avisos na tela usam IDs estáveis. Push é uma tentativa de entrega: não há garantia de recebimento nem reenvio automático de um push cuja resposta foi incerta. O aviso permanece no app. Tokens que o Firebase confirmar como inválidos são removidos. Mensagens push têm validade somente até o encerramento das vendas.
+
+Referência: [GitHub Actions — eventos agendados e possíveis atrasos](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule).
+
+## Diagnóstico do cadastro do webhook Pix
+
+O comando `npm run efi:webhook -- register` cadastra **Pix**, mesmo que você já tenha ativado crédito na API de cobranças. Para Pix, a aplicação precisa dos escopos `webhook.write` e `webhook.read`. O comando mostra HTTP, código Efí e uma orientação segura quando a Efí informar falha de acesso, HTTP de destino ou TLS, sem imprimir certificado, segredo ou chave Pix.
+
+Antes de registrar, rode `npm run efi:webhook -- check`: confira se o webhook já aponta para outro sistema. O comando bloqueia o cadastro quando a chave já atende outro domínio. Use uma chave Pix dedicada para este app, mantendo a chave e o webhook do outro projeto intactos. Na mesma conta Efí, ambas as chaves recebem no mesmo saldo.
+
+Se o cadastro falhar:
+
+- **HTTP 403 na API Efí:** confira os escopos da API Pix no mesmo ambiente do certificado e credenciais.
+- **URL do webhook responde 401:** confira se `EFI_WEBHOOK_SECRET` no servidor é exatamente igual ao local.
+- **URL responde 403:** confira proteção de deploy da Vercel e IPs oficiais Efí. A chamada feita do seu computador pode receber 403 pela restrição de origem; isso não prova que a chamada da Efí será recusada.
+- **URL responde 404:** faça o deploy da versão atual e confira o domínio `APP_URL`.
+- **URL responde 500:** corrija o erro da função em **Vercel > Logs**. Não é possível registrar um destino que falha ao responder.
+- **TLS/mTLS:** o comando inclui o cabeçalho de dispensa da validação mTLS suportado pela Efí. Confira o [guia Efí para webhook sem mTLS](https://dev.efipay.com.br/docs/api-pix/webhooks/). O app mantém segredo, validação de origem e consulta autenticada da cobrança.
+
+A Efí testa a URL ao registrar. Nunca use `localhost`, domínio de exemplo ou deploy protegido por login. Corrija e publique primeiro, depois tente cadastrar novamente. Não remova a autenticação do webhook para contornar falhas de configuração.
+
+Para conferir as credenciais do cartão, use `npm run efi:card-check`. O comando autentica na API de cobranças sem criar pagamentos, não altera o webhook Pix e não confirma KYC ou limite de cartão. O identificador público e a flag de crédito precisam estar também na Vercel, com novo build.
+
+## Consumo do Firebase no plano Spark
+
+O Firestore Standard oferece **50.000 leituras, 20.000 gravações e 20.000 exclusões por dia**, além de **1 GiB de dados** e **10 GiB/mês de saída de rede**. A cota diária reinicia perto da meia-noite do horário do Pacífico, não de Brasília. Confira os valores e o consumo em [Firestore > Usage](https://console.firebase.google.com/) e na [documentação oficial de cotas](https://firebase.google.com/docs/firestore/quotas). No Spark, atingir a cota pode interromper operações; estas otimizações não garantem que ela nunca será atingida.
+
+Proteções implementadas:
+
+- Atualização automática a cada **120 segundos**, somente com a aba visível e conexão ativa. Chamadas simultâneas de atualização compartilham a mesma requisição por conta. Login evita uma atualização duplicada, e o perfil é lido uma vez por sessão do app.
+- Cardápio público em cache por **60 segundos por instância do servidor**, compartilhando consultas simultâneas. Salvar prato ou anunciar chegada invalida o cache daquela instância. Outras instâncias e inicializações novas têm cache próprio. Estoque/preços exibidos podem atrasar; compra, pagamento e retirada consultam os documentos reais e mantêm suas validações.
+- O painel carrega todos os pedidos ao abrir e no botão **Atualizar pedidos**, sem reler toda a coleção em cada atualização do atleta. Atualize antes de conferir totais ou exportar produção. A confirmação de retirada também atualiza o painel.
+- Quando a API recebe erro de cota do Firestore, responde com HTTP 503 e orientação para aguardar. As atualizações do app fazem uma pausa de cinco minutos após HTTP 503/429.
+
+Para estimar as leituras automáticas de pedidos e avisos, use: **atletas ativos × ciclos de atualização × (documentos de pedidos + documentos de avisos por atleta)**. Cada consulta vazia também custa pelo menos uma leitura. Exemplo: 100 atletas com a tela aberta por uma hora, um pedido e dois avisos cada, geram aproximadamente **9.000 leituras** apenas nessas duas consultas (30 ciclos), além das leituras iniciais, cardápios, operações de compra, retiradas, painel, cron e lembretes. Cada aba/dispositivo adicional aumenta o consumo.
+
+O painel ainda lê todos os pedidos quando solicitado; lembretes e avisos de chegada também leem destinatários/pedidos e gravam avisos. Evite recarregar o painel repetidamente e use apenas um agendador. Acompanhe o uso real durante os testes e o evento; cache local e pausa no navegador não impõem um teto global ao projeto nem impedem chamadas diretas à API. O app não consulta automaticamente a cota restante no Firebase.
+
+
+## Cardápios — Marmitex Garota Nota 100
+
+`npx tsx --env-file=.env.local scripts/register-garota.ts` cadastra as opções reais sem substituir documentos existentes:
+
+- Sexta, 20/11: costela cozida ou bisteca suína; pequena R$ 20, média R$ 22, grande R$ 24.
+- Sábado, 21/11: churrasco ou feijoada; pequena R$ 22, média R$ 25, grande R$ 28.
+- Domingo, 22/11: arroz, feijão, macarronada, frango assado, farofa e salada de maionese; pequena R$ 20, média R$ 22, grande R$ 24.
+
+Funcionamento: sexta das 8h às 17h; sábado das 8h às 13h. Domingo somente por encomenda até sábado, com encerramento às 13h. Delivery ou retirada no restaurante. No alojamento, a retirada padrão é das 12h às 13h30 no almoço e das 18h às 19h30 no jantar.
+
+Os 15 cadastros são publicados com capacidade padrão de 50 unidades por opção/tamanho. Novos pratos no painel e os exemplos usam a mesma capacidade e os mesmos horários, definidos em `lib/menu-defaults.ts`. Ao trocar a refeição no formulário, o horário é ajustado para o padrão correspondente. O servidor impede publicar sem preço e capacidade válidos. Não foram cadastrados jantares, pois os materiais fornecidos não os especificam.
+
+`npx tsx --env-file=.env.local scripts/apply-menu-defaults.ts` aplica capacidade 50 e os horários de retirada a todos os cardápios existentes. Também publica as opções Garota Nota 100 que estavam com capacidade zero. Preserva reservas, estado das demais opções e dados de pedidos já criados; se houver mais de 50 reservas em uma opção, interrompe sem alterações.
+
+Os horários de funcionamento não entram na descrição e não alteram o fechamento padrão de vendas de almoço (10h30). Para este restaurante, o almoço de domingo tem prazo antecipado no sábado às 13h, aplicado também ao pagamento. Lembretes de domingo não promovem opções cujo prazo já terminou.
+
+Para atualizar o rascunho antigo de domingo e incluir seus três tamanhos, execute `npx tsx --env-file=.env.local scripts/update-garota-sunday.ts`. O comando preserva capacidade, reservas e estado das opções existentes.
+
+## Cardápios Sabor & Cia e Lar dos Sabores
+
+Foram extraídos 31 produtos de cada restaurante, incluindo refeições, saladas e bebidas. O catálogo público está em `data/imports/external-products.json`, com nomes, acompanhamentos, fotos, preços, grupos de escolhas e links de origem. Dados de contato, endereço e funcionamento não são incluídos nas descrições dos pratos.
+
+Os horários confirmados são das 9h às 14h, com domingo fechado, para ambos os restaurantes. A importação cria 124 cardápios: os 62 produtos no almoço de sexta, 20/11, e sábado, 21/11. Cada produto tem capacidade de 50 unidades, compartilhada pelas diferentes combinações de tamanho e adicionais, e retirada das 12h às 13h30. Não cria jantares nem opções de domingo desses restaurantes.
+
+O formulário permite escolher tamanho, salada, acompanhamentos e adicionais conforme o produto. Há um tamanho por marmita; para pedir tamanhos ou escolhas diferentes, adicione cada combinação à sacola. As quantidades dos adicionais são por unidade da marmita. A observação também pertence àquela combinação. O servidor valida opções obrigatórias, limites, preços e estoque somado antes de criar pagamentos Pix ou crédito. As escolhas ficam registradas no pedido, QR de retirada, painel e CSV de produção. O administrador pode editar grupos, opções, limites e acréscimos no formulário do prato; o preço exibido é o menor total válido, calculado a partir do preço base e das escolhas obrigatórias.
+
+Para importar no Firebase configurado:
+
+```powershell
+npx tsx --env-file=.env.local scripts/import-external-menus.ts
+```
+
+O comando confere `/api/payments/config` no `APP_URL`. Se o site já responder `menuCustomization: true`, publica os produtos. Caso contrário, salva os novos cadastros ocultos até o deploy da versão compatível; execute novamente depois de publicar o código. Isso evita que a versão antiga venda produtos ignorando as escolhas obrigatórias. Cadastros existentes e suas reservas são preservados; a limpeza das descrições do Garota Nota 100 também é aplicada no banco. A importação não atualiza preços automaticamente em cadastros já existentes.
+
+Para extrair uma nova fotografia dos catálogos públicos, sem enviar pedidos aos restaurantes:
+
+```powershell
+python -m pip install beautifulsoup4
+python scripts/extract-external-menus.py
+```
+
+Revise o JSON antes de uma nova importação: pratos do dia, saladas e preços podem mudar nos sites de origem. A extração ignora a categoria de avisos do Saipos (incluindo instruções de pagamento do restaurante). O pagamento do Inter continua no checkout próprio do aplicativo. O extrator interrompe se encontrar um tipo de escolha ou cálculo que não sabe converter.
