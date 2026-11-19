@@ -399,6 +399,8 @@ O QR é uma credencial de retirada: quem apresentar pode retirar as unidades cor
 
 ## Comandos de verificação
 
+O `package.json` fixa `jose@5.10.0` somente na dependência `firebase-admin > jwks-rsa`, para que o Firebase Auth carregue também em runtimes que desabilitam `require(ESM)`. Sem essa compatibilidade, a função inteira da API pode retornar 500 com `ERR_REQUIRE_ESM` antes de executar qualquer rota. Mantenha o override e o lockfile juntos; o teste `firebase-admin-runtime.test.ts` reproduz esse ambiente e confere a conversão de uma chave pública e sua assinatura RSA sem acesso à rede. Referência: [problema no Firebase Admin](https://github.com/firebase/firebase-admin-node/issues/3181).
+
 ```powershell
 npm run typecheck
 npm test
