@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "seed": "tsx --env-file=.env.local scripts/seed.ts",
+    "torre:register": "tsx --env-file=.env.local scripts/register-torre.ts",
     "admin": "tsx --env-file=.env.local scripts/admin.ts",
     "efi:check": "tsx --env-file=.env.local scripts/efi-check.ts",
     "efi:webhook": "tsx --env-file=.env.local scripts/efi-webhook.ts",

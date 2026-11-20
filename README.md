@@ -385,7 +385,7 @@ Uma compra pode combinar várias datas, restaurantes e refeições. Os preços v
 
 Somente o pagamento confirmado pela API libera o QR. O clique em “já paguei” apenas consulta a situação. Depois, a equipe libera a chegada, confere o prato e confirma a entrega. Uma transação no Firestore impede duas retiradas do mesmo item.
 
-O Pix tem uma janela de até 30 minutos, limitada ao fechamento da refeição mais próxima na sacola (almoço 10h30, jantar 18h, Brasília). A exportação de produção contabiliza somente pedidos pagos. As contas da equipe recebem permissão administrativa individual, sem compartilhar senha.
+O Pix tem uma janela de até 30 minutos, limitada ao fechamento da refeição mais próxima na sacola (almoço 10h30, jantar 18h, Brasília). A exportação de produção contabiliza somente pedidos pagos do dia e da refeição selecionados. O botão **Exportar produção** copia para a área de transferência um resumo em texto, agrupado por restaurante, com quantidades por prato e tamanho, total por restaurante e total geral. As contas da equipe recebem permissão administrativa individual, sem compartilhar senha.
 
 ## Operação, conciliação e dados
 
@@ -448,6 +448,10 @@ Antes de divulgar: teste em homologação a aprovação, a recusa, o desafio 3DS
 | --- | --- | --- |
 | Almoço | Até 10h | Às 10h30 do dia da refeição |
 | Jantar | Até 17h30 | Às 18h do dia da refeição |
+
+O **Torre Restaurante e Marmitex** tem uma exceção no jantar: pedidos e pagamentos encerram às **19h45 (Brasília)**, em 20, 21 e 22/11/2026. O Pix continua limitado a 30 minutos e ao menor prazo dos itens na sacola. A retirada do Torre depende do aviso de chegada da equipe.
+
+O cardápio noturno do Torre foi transcrito das fotos fornecidas, com 66 produtos por dia: marmitex com tamanhos, massas, lanches com acréscimos, porções, combo e pratos à la carte para três pessoas. Para cadastrar no Firebase, execute `npm run torre:register`. O comando cria os itens ausentes com capacidade padrão 50 e atualiza o prazo dos itens existentes, preservando reservas e alterações administrativas. O código com a exceção de horário precisa estar publicado para o site aceitar pedidos após as 18h.
 
 O aviso aparece no cardápio. A meia hora adicional permite concluir a compra, e o bloqueio é validado no servidor, mesmo se a tela estiver aberta ou alguém tentar chamar a API diretamente. Os dias 20, 21 e 22 são independentes: o fechamento do almoço de sexta não bloqueia os dias seguintes nem o jantar. O prazo fixo vale também para cardápios antigos, sem precisar recadastrar dados. O formulário administrativo mostra o encerramento calculado e não permite alterá-lo.
 
